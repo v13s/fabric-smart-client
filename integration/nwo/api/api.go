@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/fsc/identity"
-	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client"
+	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client/view"
 	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/grpc"
 )
 
@@ -19,7 +19,7 @@ type PortName string
 type Ports map[PortName]uint16
 
 type ExtensionName string
-type Extensions map[ExtensionName]string
+type Extensions map[ExtensionName][]string
 
 const (
 	FabricExtension  ExtensionName = "FabricExtension"
@@ -42,10 +42,11 @@ func (t *Topologies) Export() ([]byte, error) {
 }
 
 type Context interface {
-	NetworkID() string
 	RootDir() string
-	AddExtension(id string, extension ExtensionName, s string)
 	ReservePort() uint16
+
+	AddExtension(id string, extension ExtensionName, s string)
+	ExtensionsByPeerID(name string) Extensions
 
 	PortsByPeerID(prefix string, id string) Ports
 	SetPortsByPeerID(prefix string, id string, ports Ports)
@@ -57,11 +58,10 @@ type Context interface {
 	SetAdminSigningIdentity(name string, id identity.SigningIdentity)
 	SetViewIdentity(name string, cert []byte)
 	ConnectionConfig(name string) *grpc.ConnectionConfig
-	ClientSigningIdentity(name string) client.SigningIdentity
+	ClientSigningIdentity(name string) view.SigningIdentity
 	SetViewClient(name string, c ViewClient)
 	GetViewIdentityAliases(name string) []string
-	AdminSigningIdentity(name string) client.SigningIdentity
-	ExtensionsByPeerID(name string) Extensions
+	AdminSigningIdentity(name string) view.SigningIdentity
 }
 
 type Builder interface {

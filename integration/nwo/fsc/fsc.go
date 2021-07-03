@@ -27,9 +27,11 @@ import (
 	"github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/prometheus/common/log"
 	"github.com/spf13/viper"
 	"github.com/tedsuo/ifrit"
 	"github.com/tedsuo/ifrit/grouper"
+	"gopkg.in/yaml.v2"
 
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/api"
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/common"
@@ -38,7 +40,7 @@ import (
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/fsc/identity"
 	node2 "github.com/hyperledger-labs/fabric-smart-client/integration/nwo/fsc/node"
 	"github.com/hyperledger-labs/fabric-smart-client/platform/fabric/services/crypto"
-	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client"
+	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client/view"
 	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/grpc"
 )
 
@@ -50,6 +52,7 @@ const (
 
 type platform struct {
 	Context           api.Context
+	NetworkID         string
 	Builder           *Builder
 	Topology          *Topology
 	EventuallyTimeout time.Duration
@@ -63,6 +66,7 @@ type platform struct {
 func NewPlatform(Registry api.Context, t api.Topology, builderClient BuilderClient) *platform {
 	p := &platform{
 		Context:           Registry,
+		NetworkID:         common.UniqueName(),
 		Builder:           &Builder{client: builderClient},
 		Topology:          t.(*Topology),
 		EventuallyTimeout: 10 * time.Minute,
@@ -174,8 +178,8 @@ func (p *platform) PostRun() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Get from the registry the signing identity and the connection config
-		c, err := client.New(
-			&client.Config{
+		c, err := view.New(
+			&view.Config{
 				ID:      v.GetString("fsc.id"),
 				FSCNode: p.Context.ConnectionConfig(node.Name),
 			},
@@ -198,8 +202,8 @@ func (p *platform) PostRun() {
 
 		// Setup admins
 		if id := p.Context.AdminSigningIdentity(node.Name); id != nil {
-			c, err := client.New(
-				&client.Config{
+			c, err := view.New(
+				&view.Config{
 					ID:      v.GetString("fsc.id"),
 					FSCNode: p.Context.ConnectionConfig(node.Name),
 				},
@@ -329,13 +333,49 @@ func (p *platform) GenerateCoreConfig(peer *node2.Peer) {
 	defer core.Close()
 
 	var extensions []string
-	for _, ext := range p.Context.ExtensionsByPeerID(peer.Name) {
-		extensions = append(extensions, ext)
+	for _, extensionsByPeerID := range p.Context.ExtensionsByPeerID(peer.Name) {
+		// if len(extensionsByPeerID) > 1, we need a merge
+		if len(extensionsByPeerID) > 1 {
+			// merge
+			var resultValues map[string]interface{}
+			for _, ext := range extensionsByPeerID {
+				var override map[string]interface{}
+				if err := yaml.Unmarshal([]byte(ext), &override); err != nil {
+					log.Info(err)
+					continue
+				}
+
+				// we expect override to have a single root key
+				if resultValues == nil {
+					resultValues = override
+				} else {
+					// merge the single root key
+					for k, v := range override {
+						// merge resultValues[k] and v
+						m1 := resultValues[k].(map[interface{}]interface{})
+						m2 := v.(map[interface{}]interface{})
+
+						for kk, vv := range m2 {
+							m1[kk] = vv
+						}
+					}
+				}
+			}
+			bs, err := yaml.Marshal(resultValues)
+			if err != nil {
+				panic(err)
+			}
+			extensions = append(extensions, string(bs))
+		} else {
+			for _, s := range extensionsByPeerID {
+				extensions = append(extensions, s)
+			}
+		}
 	}
 
 	t, err := template.New("peer").Funcs(template.FuncMap{
 		"Peer":        func() *node2.Peer { return peer },
-		"Context":     func() api.Context { return p.Context },
+		"NetworkID":   func() string { return p.NetworkID },
 		"Topology":    func() *Topology { return p.Topology },
 		"Extensions":  func() []string { return extensions },
 		"ToLower":     func(s string) string { return strings.ToLower(s) },

@@ -8,9 +8,8 @@ package context
 
 import (
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/api"
-	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/common"
 	"github.com/hyperledger-labs/fabric-smart-client/integration/nwo/fsc/identity"
-	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client"
+	view2 "github.com/hyperledger-labs/fabric-smart-client/platform/view/services/client/view"
 	"github.com/hyperledger-labs/fabric-smart-client/platform/view/services/grpc"
 	"github.com/hyperledger-labs/fabric-smart-client/platform/view/view"
 )
@@ -26,7 +25,6 @@ type SigningIdentity interface {
 }
 
 type Context struct {
-	networkID        string
 	Builder          Builder
 	PortCounter      uint16
 	rootDir          string
@@ -54,7 +52,6 @@ func New(rootDir string, portCounter uint16, builder api.Builder, topologies ...
 		rootDir:                 rootDir,
 		PortCounter:             portCounter,
 		Builder:                 builder,
-		networkID:               common.UniqueName(),
 		ViewClients:             map[string]api.ViewClient{},
 		ViewIdentities:          map[string]view.Identity{},
 		ViewIdentityAliases:     map[string][]string{},
@@ -66,10 +63,6 @@ func New(rootDir string, portCounter uint16, builder api.Builder, topologies ...
 		TopologiesByName:        topologiesByName,
 		PlatformsByName:         map[string]api.Platform{},
 	}
-}
-
-func (c *Context) NetworkID() string {
-	return c.networkID
 }
 
 func (c *Context) RootDir() string {
@@ -113,7 +106,7 @@ func (c *Context) ConnectionConfig(name string) *grpc.ConnectionConfig {
 	return c.ConnectionConfigs[name]
 }
 
-func (c *Context) ClientSigningIdentity(name string) client.SigningIdentity {
+func (c *Context) ClientSigningIdentity(name string) view2.SigningIdentity {
 	return c.ClientSigningIdentities[name]
 }
 
@@ -125,7 +118,7 @@ func (c *Context) GetViewIdentityAliases(name string) []string {
 	return c.ViewIdentityAliases[name]
 }
 
-func (c *Context) AdminSigningIdentity(name string) client.SigningIdentity {
+func (c *Context) AdminSigningIdentity(name string) view2.SigningIdentity {
 	return c.AdminSigningIdentities[name]
 }
 
@@ -139,7 +132,7 @@ func (c *Context) AddExtension(id string, name api.ExtensionName, extension stri
 		extensions = api.Extensions{}
 		c.extensionsByPeerID[id] = extensions
 	}
-	extensions[name] = extension
+	extensions[name] = append(extensions[name], extension)
 }
 
 func (c *Context) AddIdentityAlias(id string, alias string) {
